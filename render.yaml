@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: processo-tracker-api
+    env: docker
+    plan: free
+    autoDeploy: true
+
+databases:
+  - name: processo-tracker-db
+    plan: free
