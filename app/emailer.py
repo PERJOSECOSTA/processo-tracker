@@ -1,50 +1,33 @@
 import os
-import smtplib
-import socket
-from email.message import EmailMessage
+import requests
 
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASS = os.getenv("SMTP_PASS", "")
-
-EMAIL_FROM = os.getenv("EMAIL_FROM", SMTP_USER)
-EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME", "Monitor de Processos")
-
-
-def _resolve_ipv4(host: str, port: int):
-    """
-    Força IPv4 para evitar 'Network is unreachable' em ambientes sem rota IPv6.
-    """
-    infos = socket.getaddrinfo(host, port, family=socket.AF_INET, type=socket.SOCK_STREAM)
-    # retorna (ip, port)
-    return infos[0][4]
-
+EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "resend").lower()
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+EMAIL_FROM = os.getenv("EMAIL_FROM", "Monitor de Processos <onboarding@resend.dev>")
 
 def enviar_email(destino: str, assunto: str, corpo: str):
-    if not SMTP_USER or not SMTP_PASS:
-        raise RuntimeError("SMTP_USER/SMTP_PASS não configurados no Environment")
+    if EMAIL_PROVIDER != "resend":
+        raise RuntimeError(f"EMAIL_PROVIDER inválido: {EMAIL_PROVIDER}")
 
-    msg = EmailMessage()
-    msg["Subject"] = assunto
-    msg["From"] = f"{EMAIL_FROM_NAME} <{EMAIL_FROM}>"
-    msg["To"] = destino
-    msg.set_content(corpo)
+    if not RESEND_API_KEY:
+        raise RuntimeError("RESEND_API_KEY não configurada no Environment")
 
-    ip, prt = _resolve_ipv4(SMTP_HOST, SMTP_PORT)
+    r = requests.post(
+        "https://api.resend.com/emails",
+        headers={
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "from": EMAIL_FROM,
+            "to": [destino],
+            "subject": assunto,
+            "text": corpo,
+        },
+        timeout=20,
+    )
 
-    # Usa timeout para não travar
-    server = smtplib.SMTP(timeout=20)
-    try:
-        server.connect(ip, prt)
-        server.ehlo()
-        # STARTTLS na porta 587
-        server.starttls()
-        server.ehlo()
-        server.login(SMTP_USER, SMTP_PASS)
-        server.send_message(msg)
-    finally:
-        try:
-            server.quit()
-        except Exception:
-            pass
+    if r.status_code >= 400:
+        raise RuntimeError(f"Resend error {r.status_code}: {r.text}")
+
+    return r.json()
